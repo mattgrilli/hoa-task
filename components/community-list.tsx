@@ -15,38 +15,63 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import Link from "next/link"
-import { getCommunities } from "@/app/actions/communities"
-import { getTasksByCommunity } from "@/app/actions/tasks"
+import { supabase } from "@/lib/supabase"
+import { useToast } from "@/components/ui/use-toast"
 
 export function CommunityList() {
   const [searchQuery, setSearchQuery] = useState("")
   const [communities, setCommunities] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [communityTasks, setCommunityTasks] = useState<Record<string, number>>({})
+  const { toast } = useToast()
 
   useEffect(() => {
     async function loadCommunities() {
       try {
-        const communitiesData = await getCommunities()
+        setLoading(true)
+
+        // Fetch communities
+        const { data: communitiesData, error: communitiesError } = await supabase
+          .from("communities")
+          .select("*")
+          .order("name")
+
+        if (communitiesError) throw communitiesError
+
         setCommunities(communitiesData || [])
 
         // Load task counts for each community
         const taskCounts: Record<string, number> = {}
-        for (const community of communitiesData) {
-          const tasks = await getTasksByCommunity(community.id)
-          taskCounts[community.id] = tasks.length
-        }
-        setCommunityTasks(taskCounts)
 
-        setLoading(false)
-      } catch (error) {
+        for (const community of communitiesData || []) {
+          const { count, error: countError } = await supabase
+            .from("tasks")
+            .select("*", { count: "exact", head: true })
+            .eq("community_id", community.id)
+
+          if (countError) {
+            console.error(`Error counting tasks for community ${community.id}:`, countError)
+            continue
+          }
+
+          taskCounts[community.id] = count || 0
+        }
+
+        setCommunityTasks(taskCounts)
+      } catch (error: any) {
         console.error("Error loading communities:", error)
+        toast({
+          title: "Error loading communities",
+          description: error.message || "Failed to load communities",
+          variant: "destructive",
+        })
+      } finally {
         setLoading(false)
       }
     }
 
     loadCommunities()
-  }, [])
+  }, [toast])
 
   const filteredCommunities = communities.filter((community) =>
     community.name.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -120,7 +145,7 @@ export function CommunityList() {
                             Edit Details
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem>
+                          <DropdownMenuItem asChild>
                             <Link href={`/tasks?community=${community.id}`}>View Tasks</Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem>View Reports</DropdownMenuItem>

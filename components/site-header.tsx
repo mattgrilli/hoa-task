@@ -1,70 +1,56 @@
-"use client"
-
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { UserNav } from "@/components/user-nav"
 import { ModeToggle } from "@/components/mode-toggle"
-import { NotificationSettings } from "@/components/notification-settings"
-import { ClipboardList } from "lucide-react"
-import { SidebarTrigger } from "@/components/ui/sidebar"
-import { usePathname } from "next/navigation"
+import { UserNav } from "@/components/user-nav"
+import { getCurrentUser } from "@/lib/auth"
 
-export function SiteHeader() {
-  const pathname = usePathname()
-
-  // Check if we're on an auth page (login, register, etc.)
-  const isAuthPage =
-    pathname.startsWith("/login") || pathname.startsWith("/register") || pathname.startsWith("/forgot-password")
+export async function SiteHeader() {
+  const user = await getCurrentUser()
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center">
-        <SidebarTrigger className="mr-2 md:hidden" />
-        <Link href="/" className="flex items-center gap-2">
-          <ClipboardList className="h-6 w-6" />
-          <span className="hidden font-bold sm:inline-block">HOA Task Manager</span>
-        </Link>
-        <div className="flex flex-1 items-center justify-end space-x-4">
-          {!isAuthPage && (
-            <nav className="hidden md:flex items-center space-x-2">
-              <Button variant="ghost" asChild className={pathname === "/tasks" ? "bg-accent" : ""}>
-                <Link href="/tasks">Tasks</Link>
-              </Button>
-              <Button variant="ghost" asChild className={pathname === "/communities" ? "bg-accent" : ""}>
-                <Link href="/communities">Communities</Link>
-              </Button>
-              <Button variant="ghost" asChild className={pathname === "/staff" ? "bg-accent" : ""}>
-                <Link href="/staff">Staff</Link>
-              </Button>
-              <Button variant="ghost" asChild className={pathname === "/reports" ? "bg-accent" : ""}>
-                <Link href="/reports">Reports</Link>
-              </Button>
-              <Button variant="ghost" asChild className={pathname === "/test-connection" ? "bg-accent" : ""}>
-                <Link href="/test-connection">Test Connection</Link>
-              </Button>
-            </nav>
-          )}
-          {!isAuthPage && (
-            <>
-              <NotificationSettings />
-              <ModeToggle />
-              <UserNav />
-            </>
-          )}
-          {isAuthPage && (
-            <div className="flex items-center space-x-2">
-              <ModeToggle />
-              {pathname !== "/login" && (
-                <Button variant="outline" asChild>
-                  <Link href="/login">Login</Link>
-                </Button>
-              )}
-              {pathname !== "/register" && (
-                <Button asChild>
-                  <Link href="/register">Sign Up</Link>
-                </Button>
-              )}
-            </div>
+    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container flex h-14 items-center">
+        <div className="mr-4 hidden md:flex">
+          <Link href="/" className="mr-6 flex items-center space-x-2">
+            <span className="hidden font-bold sm:inline-block">HOA Task Manager</span>
+          </Link>
+          <nav className="flex items-center space-x-6 text-sm font-medium">
+            <Link href="/tasks" className="transition-colors hover:text-foreground/80">
+              Tasks
+            </Link>
+            <Link href="/communities" className="transition-colors hover:text-foreground/80">
+              Communities
+            </Link>
+            <Link href="/staff" className="transition-colors hover:text-foreground/80">
+              Staff
+            </Link>
+            <Link href="/reports" className="transition-colors hover:text-foreground/80">
+              Reports
+            </Link>
+            <Link href="/test-connection" className="transition-colors hover:text-foreground/80">
+              Test Connection
+            </Link>
+            <Link href="/setup" className="transition-colors hover:text-foreground/80">
+              Setup Database
+            </Link>
+            <Link href="/setup-admin" className="transition-colors hover:text-foreground/80">
+              Setup Admin
+            </Link>
+          </nav>
+        </div>
+        <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
+          <div className="w-full flex-1 md:w-auto md:flex-none">
+            <Button variant="outline" asChild className="inline-flex items-center whitespace-nowrap md:hidden">
+              <Link href="/">HOA Task Manager</Link>
+            </Button>
+          </div>
+          <ModeToggle />
+          {user ? (
+            <UserNav />
+          ) : (
+            <Button asChild>
+              <Link href="/login">Login</Link>
+            </Button>
           )}
         </div>
       </div>

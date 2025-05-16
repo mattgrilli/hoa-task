@@ -16,31 +16,73 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import Link from "next/link"
-import { getTasks } from "@/app/actions/tasks"
+import { supabase } from "@/lib/supabase"
+import { useToast } from "@/components/ui/use-toast"
 
 export function TaskList() {
   const [page, setPage] = useState(1)
   const [tasks, setTasks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [totalCount, setTotalCount] = useState(0)
+  const { toast } = useToast()
   const tasksPerPage = 10
 
   useEffect(() => {
     async function loadTasks() {
       try {
-        const tasksData = await getTasks()
-        setTasks(tasksData || [])
-        setLoading(false)
-      } catch (error) {
+        setLoading(true)
+
+        // Get total count for pagination
+        const { count, error: countError } = await supabase.from("tasks").select("*", { count: "exact", head: true })
+
+        if (countError) throw countError
+        setTotalCount(count || 0)
+
+        // Fetch tasks with pagination
+        const { data, error } = await supabase
+          .from("tasks")
+          .select(`
+            *,
+            communities:community_id(name),
+            staff:assigned_to(name)
+          `)
+          .order("due_date")
+          .range((page - 1) * tasksPerPage, page * tasksPerPage - 1)
+
+        if (error) throw error
+
+        // Transform the data to match the expected format
+        const transformedData = data.map((task) => ({
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          priority: task.priority,
+          dueDate: task.due_date,
+          community: task.communities?.name,
+          communityId: task.community_id,
+          assignedTo: task.staff?.name,
+          assignedToId: task.assigned_to,
+          createdAt: task.created_at,
+        }))
+
+        setTasks(transformedData)
+      } catch (error: any) {
         console.error("Error loading tasks:", error)
+        toast({
+          title: "Error loading tasks",
+          description: error.message || "Failed to load tasks",
+          variant: "destructive",
+        })
+      } finally {
         setLoading(false)
       }
     }
 
     loadTasks()
-  }, [])
+  }, [page, toast])
 
-  const totalPages = Math.ceil(tasks.length / tasksPerPage)
-  const displayedTasks = tasks.slice((page - 1) * tasksPerPage, page * tasksPerPage)
+  const totalPages = Math.ceil(totalCount / tasksPerPage)
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -97,16 +139,16 @@ export function TaskList() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayedTasks.length === 0 ? (
+                {tasks.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8">
-                      {tasks.length === 0
+                      {totalCount === 0
                         ? "No tasks found. Create your first task to get started."
                         : "No tasks match your criteria."}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  displayedTasks.map((task) => (
+                  tasks.map((task) => (
                     <TableRow key={task.id}>
                       <TableCell>
                         <Checkbox id={`select-${task.id}`} />
@@ -136,7 +178,7 @@ export function TaskList() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem asChild>
                               <Link href={`/tasks/${task.id}`}>View Details</Link>
                             </DropdownMenuItem>
                             <DropdownMenuItem>Edit Task</DropdownMenuItem>
@@ -153,11 +195,11 @@ export function TaskList() {
                 )}
               </TableBody>
             </Table>
-            {tasks.length > 0 && (
+            {totalCount > 0 && (
               <div className="flex items-center justify-between py-4">
                 <div className="text-sm text-muted-foreground">
-                  Showing {(page - 1) * tasksPerPage + 1} to {Math.min(page * tasksPerPage, tasks.length)} of{" "}
-                  {tasks.length} tasks
+                  Showing {(page - 1) * tasksPerPage + 1} to {Math.min(page * tasksPerPage, totalCount)} of {totalCount}{" "}
+                  tasks
                 </div>
                 <div className="flex items-center space-x-2">
                   <Button

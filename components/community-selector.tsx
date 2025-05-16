@@ -6,28 +6,40 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { getCommunities } from "@/app/actions/communities"
+import { supabase } from "@/lib/supabase"
+import { useToast } from "@/components/ui/use-toast"
 
 export function CommunitySelector() {
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState("all")
   const [communities, setCommunities] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const { toast } = useToast()
 
   useEffect(() => {
     async function loadCommunities() {
       try {
-        const communitiesData = await getCommunities()
-        setCommunities(communitiesData || [])
-        setLoading(false)
-      } catch (error) {
+        setLoading(true)
+
+        const { data, error } = await supabase.from("communities").select("id, name").order("name")
+
+        if (error) throw error
+
+        setCommunities(data || [])
+      } catch (error: any) {
         console.error("Error loading communities:", error)
+        toast({
+          title: "Error loading communities",
+          description: error.message || "Failed to load communities",
+          variant: "destructive",
+        })
+      } finally {
         setLoading(false)
       }
     }
 
     loadCommunities()
-  }, [])
+  }, [toast])
 
   const allCommunities = [{ id: "all", name: "All Communities" }, ...(communities || [])]
 

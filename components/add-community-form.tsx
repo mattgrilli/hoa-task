@@ -6,7 +6,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { createCommunity } from "@/app/actions/communities"
+import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -18,6 +18,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { PlusCircle } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 
 export function AddCommunityForm() {
   const [open, setOpen] = useState(false)
@@ -26,6 +27,7 @@ export function AddCommunityForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
   const router = useRouter()
+  const { toast } = useToast()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -44,18 +46,36 @@ export function AddCommunityForm() {
     setError("")
 
     try {
-      const community = await createCommunity(name, Number(units))
-      if (community) {
-        setName("")
-        setUnits("")
-        setOpen(false)
-        router.refresh()
-      } else {
-        setError("Failed to create community")
-      }
-    } catch (err) {
+      const { data, error: insertError } = await supabase
+        .from("communities")
+        .insert([
+          {
+            name,
+            units: Number(units),
+          },
+        ])
+        .select()
+
+      if (insertError) throw insertError
+
+      toast({
+        title: "Community created",
+        description: "Your community has been created successfully",
+      })
+
+      setName("")
+      setUnits("")
+      setOpen(false)
+      router.refresh()
+    } catch (err: any) {
       console.error("Error creating community:", err)
-      setError("An error occurred while creating the community")
+      setError(err.message || "An error occurred while creating the community")
+
+      toast({
+        title: "Error creating community",
+        description: err.message || "Failed to create community",
+        variant: "destructive",
+      })
     } finally {
       setIsSubmitting(false)
     }

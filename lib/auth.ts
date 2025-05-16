@@ -100,6 +100,17 @@ export async function getUserRole(): Promise<string | null> {
   }
 }
 
+export async function requireRole(allowedRoles: string[]) {
+  await requireAuth()
+  const role = await getUserRole()
+
+  if (!role || !allowedRoles.includes(role)) {
+    redirect("/")
+  }
+
+  return role
+}
+
 export async function canAccessResource(resourceType: string, resourceId: string): Promise<boolean> {
   const profile = await getUserProfile()
   if (!profile) return false
@@ -107,18 +118,12 @@ export async function canAccessResource(resourceType: string, resourceId: string
   const supabase = createServerClient()
 
   if (profile.userType === "staff") {
-    // Staff can access all resources in communities they manage
-    if (resourceType === "community") {
-      const { data } = await supabase
-        .from("staff_communities")
-        .select()
-        .eq("staff_id", profile.id)
-        .eq("community_id", resourceId)
-        .single()
-
-      return !!data
+    // Admin and Super Admin can access everything
+    if (profile.role === "Admin" || profile.role === "Super Admin") {
+      return true
     }
 
+    // Staff can access tasks they created or are assigned to
     if (resourceType === "task") {
       const { data } = await supabase
         .from("tasks")
@@ -143,6 +148,18 @@ export async function canAccessResource(resourceType: string, resourceId: string
 
       return !!communityAccess
     }
+
+    // Community Manager can access their assigned communities
+    if (resourceType === "community") {
+      const { data } = await supabase
+        .from("staff_communities")
+        .select()
+        .eq("staff_id", profile.id)
+        .eq("community_id", resourceId)
+        .single()
+
+      return !!data
+    }
   } else if (profile.userType === "resident") {
     // Residents can only access their own community
     if (resourceType === "community") {
@@ -163,4 +180,54 @@ export async function canAccessResource(resourceType: string, resourceId: string
   }
 
   return false
+}
+
+// Check if user can access a specific portfolio (community group)
+export async function canAccessPortfolio(portfolioId: string): Promise<boolean> {
+  const profile = await getUserProfile()
+  if (!profile) return false
+
+  // Admin and Super Admin can access all portfolios
+  if (profile.userType === "staff" && (profile.role === "Admin" || profile.role === "Super Admin")) {
+    return true
+  }
+
+  const supabase = createServerClient()
+
+  // Check if staff is assigned to this portfolio
+  if (profile.userType === "staff") {
+    const { data } = await supabase
+      .from("staff_communities")
+      .select()
+      .eq("staff_id", profile.id)
+      .eq("community_id", portfolioId)
+      .single()
+
+    return !!data
+  }
+
+  // Residents can only access their own community
+  if (profile.userType === "resident") {
+    return portfolioId === profile.community_id
+  }
+
+  return false
+}
+
+export async function isUserAdmin(): Promise<boolean> {
+  const profile = await getUserProfile()
+  if (!profile) return false
+
+  return profile.userType === "staff" && (profile.role === "Admin" || profile.role === "Super Admin")
+}
+
+export async function requireAdmin() {
+  await requireAuth()
+  const isAdmin = await isUserAdmin()
+
+  if (!isAdmin) {
+    redirect("/")
+  }
+
+  return true
 }

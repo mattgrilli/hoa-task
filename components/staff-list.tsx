@@ -16,38 +16,87 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { getStaffWithCommunities } from "@/app/actions/staff"
-import { getTasksByAssignee } from "@/app/actions/tasks"
+import { supabase } from "@/lib/supabase"
+import { useToast } from "@/components/ui/use-toast"
 
 export function StaffList() {
   const [searchQuery, setSearchQuery] = useState("")
   const [staffMembers, setStaffMembers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [staffTasks, setStaffTasks] = useState<Record<string, number>>({})
+  const { toast } = useToast()
 
   useEffect(() => {
     async function loadStaff() {
       try {
-        const staffData = await getStaffWithCommunities()
-        setStaffMembers(staffData || [])
+        setLoading(true)
+
+        // Fetch staff with their communities
+        const { data: staffData, error: staffError } = await supabase
+          .from("staff")
+          .select(`
+            *,
+            staff_communities(
+              community_id,
+              communities:community_id(
+                id,
+                name
+              )
+            )
+          `)
+          .order("name")
+
+        if (staffError) throw staffError
+
+        // Transform the data to match the expected format
+        const transformedData =
+          staffData?.map((staff) => {
+            const communities =
+              staff.staff_communities?.map((sc: any) => ({
+                id: sc.communities?.id,
+                name: sc.communities?.name,
+              })) || []
+
+            return {
+              ...staff,
+              communities,
+            }
+          }) || []
+
+        setStaffMembers(transformedData)
 
         // Load task counts for each staff member
         const taskCounts: Record<string, number> = {}
-        for (const staff of staffData) {
-          const tasks = await getTasksByAssignee(staff.id)
-          taskCounts[staff.id] = tasks.length
-        }
-        setStaffTasks(taskCounts)
 
-        setLoading(false)
-      } catch (error) {
+        for (const staff of transformedData) {
+          const { count, error: countError } = await supabase
+            .from("tasks")
+            .select("*", { count: "exact", head: true })
+            .eq("assigned_to", staff.id)
+
+          if (countError) {
+            console.error(`Error counting tasks for staff ${staff.id}:`, countError)
+            continue
+          }
+
+          taskCounts[staff.id] = count || 0
+        }
+
+        setStaffTasks(taskCounts)
+      } catch (error: any) {
         console.error("Error loading staff:", error)
+        toast({
+          title: "Error loading staff",
+          description: error.message || "Failed to load staff members",
+          variant: "destructive",
+        })
+      } finally {
         setLoading(false)
       }
     }
 
     loadStaff()
-  }, [])
+  }, [toast])
 
   const filteredStaff = staffMembers.filter(
     (staff) =>
@@ -102,7 +151,7 @@ export function StaffList() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Avatar>
-                          <AvatarImage src={staff.avatar_url || "/placeholder.svg"} alt={staff.name} />
+                          <AvatarImage src={staff.avatar_url || "/abstract-geometric-shapes.png"} alt={staff.name} />
                           <AvatarFallback>
                             {staff.name
                               .split(" ")

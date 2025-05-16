@@ -5,7 +5,7 @@ import type React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, ClipboardList, Home, Users, FileText } from "lucide-react"
+import { LayoutDashboard, ClipboardList, Home, Users, FileText, Settings } from "lucide-react"
 import {
   Sidebar as ShadcnSidebar,
   SidebarContent,
@@ -47,6 +47,11 @@ export function Sidebar({ className }: SidebarProps) {
       href: "/reports",
       label: "Reports",
       icon: FileText,
+    },
+    {
+      href: "/admin",
+      label: "Admin",
+      icon: Settings,
     },
   ]
 

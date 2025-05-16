@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
@@ -18,9 +18,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [verificationSuccess, setVerificationSuccess] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirectTo") || "/"
+
+  // Check for email verification success
+  useEffect(() => {
+    const emailVerified = searchParams.get("emailVerified") === "true"
+    if (emailVerified) {
+      setVerificationSuccess(true)
+    }
+  }, [searchParams])
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
@@ -57,6 +66,13 @@ export default function LoginPage() {
           <CardDescription className="text-center">Enter your credentials to access your account</CardDescription>
         </CardHeader>
         <CardContent>
+          {verificationSuccess && (
+            <Alert className="mb-4 bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-900">
+              <AlertDescription className="text-green-600 dark:text-green-400">
+                Email verified successfully! You can now log in.
+              </AlertDescription>
+            </Alert>
+          )}
           <form onSubmit={handleLogin} className="space-y-4">
             {error && (
               <Alert variant="destructive">

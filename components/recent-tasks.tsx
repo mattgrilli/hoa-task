@@ -7,31 +7,73 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import Link from "next/link"
-import { getTasks } from "@/app/actions/tasks"
+import { supabase } from "@/lib/supabase"
+import { useToast } from "@/components/ui/use-toast"
 
 export function RecentTasks() {
   const [page, setPage] = useState(1)
   const [tasks, setTasks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [totalCount, setTotalCount] = useState(0)
+  const { toast } = useToast()
   const tasksPerPage = 5
 
   useEffect(() => {
     async function loadTasks() {
       try {
-        const tasksData = await getTasks()
-        setTasks(tasksData || [])
-        setLoading(false)
-      } catch (error) {
+        setLoading(true)
+
+        // Get total count for pagination
+        const { count, error: countError } = await supabase.from("tasks").select("*", { count: "exact", head: true })
+
+        if (countError) throw countError
+        setTotalCount(count || 0)
+
+        // Fetch tasks with pagination
+        const { data, error } = await supabase
+          .from("tasks")
+          .select(`
+            *,
+            communities:community_id(name),
+            staff:assigned_to(name)
+          `)
+          .order("created_at", { ascending: false })
+          .range((page - 1) * tasksPerPage, page * tasksPerPage - 1)
+
+        if (error) throw error
+
+        // Transform the data to match the expected format
+        const transformedData = data.map((task) => ({
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          priority: task.priority,
+          dueDate: task.due_date,
+          community: task.communities?.name,
+          communityId: task.community_id,
+          assignedTo: task.staff?.name,
+          assignedToId: task.assigned_to,
+          createdAt: task.created_at,
+        }))
+
+        setTasks(transformedData)
+      } catch (error: any) {
         console.error("Error loading tasks:", error)
+        toast({
+          title: "Error loading tasks",
+          description: error.message || "Failed to load tasks",
+          variant: "destructive",
+        })
+      } finally {
         setLoading(false)
       }
     }
 
     loadTasks()
-  }, [])
+  }, [page, toast])
 
-  const totalPages = Math.ceil(tasks.length / tasksPerPage)
-  const displayedTasks = tasks.slice((page - 1) * tasksPerPage, page * tasksPerPage)
+  const totalPages = Math.ceil(totalCount / tasksPerPage)
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -69,14 +111,14 @@ export function RecentTasks() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayedTasks.length === 0 ? (
+                {tasks.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center py-8">
                       No tasks found
                     </TableCell>
                   </TableRow>
                 ) : (
-                  displayedTasks.map((task) => (
+                  tasks.map((task) => (
                     <TableRow key={task.id}>
                       <TableCell className="font-medium">
                         <Link href={`/tasks/${task.id}`} className="hover:underline">
@@ -95,7 +137,7 @@ export function RecentTasks() {
                 )}
               </TableBody>
             </Table>
-            {tasks.length > 0 && (
+            {totalCount > 0 && (
               <div className="flex items-center justify-end space-x-2 py-4">
                 <Button
                   variant="outline"

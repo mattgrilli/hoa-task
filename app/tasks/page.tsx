@@ -1,8 +1,10 @@
+import { Suspense } from "react"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { TaskFilters } from "@/components/task-filters"
 import { TaskList } from "@/components/task-list"
 import { AddTaskForm } from "@/components/add-task-form"
+import { Skeleton } from "@/components/ui/skeleton"
 
 export default function TasksPage() {
   return (
@@ -11,7 +13,13 @@ export default function TasksPage() {
         <AddTaskForm />
       </DashboardHeader>
       <TaskFilters />
-      <TaskList />
+      <Suspense fallback={<TaskListSkeleton />}>
+        <TaskList />
+      </Suspense>
     </DashboardShell>
   )
+}
+
+function TaskListSkeleton() {
+  return <Skeleton className="w-full h-[600px]" />
 }

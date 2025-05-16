@@ -8,9 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { createTask } from "@/app/actions/tasks"
-import { getCommunities } from "@/app/actions/communities"
-import { getStaff } from "@/app/actions/staff"
+import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -22,6 +20,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { PlusCircle } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 
 export function AddTaskForm() {
   const [open, setOpen] = useState(false)
@@ -37,15 +36,31 @@ export function AddTaskForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
   const router = useRouter()
+  const { toast } = useToast()
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [communitiesData, staffData] = await Promise.all([getCommunities(), getStaff()])
+        // Fetch communities
+        const { data: communitiesData, error: communitiesError } = await supabase
+          .from("communities")
+          .select("id, name")
+          .order("name")
+
+        if (communitiesError) throw communitiesError
         setCommunities(communitiesData || [])
+
+        // Fetch staff
+        const { data: staffData, error: staffError } = await supabase
+          .from("staff")
+          .select("id, name, role")
+          .order("name")
+
+        if (staffError) throw staffError
         setStaff(staffData || [])
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error loading form data:", error)
+        setError("Failed to load form data. Please try again.")
       }
     }
 
@@ -76,24 +91,80 @@ export function AddTaskForm() {
     setError("")
 
     try {
-      const task = await createTask(title, communityId, status, priority, dueDate, description, assignedTo || undefined)
+      // Get current user's auth ID
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-      if (task) {
-        setTitle("")
-        setDescription("")
-        setCommunityId("")
-        setAssignedTo("")
-        setStatus("pending")
-        setPriority("medium")
-        setDueDate("")
-        setOpen(false)
-        router.refresh()
-      } else {
-        setError("Failed to create task")
+      // Get staff ID from auth ID
+      let createdBy = null
+      if (session?.user?.id) {
+        const { data: staffData } = await supabase.from("staff").select("id").eq("auth_id", session.user.id).single()
+
+        if (staffData) {
+          createdBy = staffData.id
+        }
       }
-    } catch (err) {
+
+      // Insert task
+      const { data, error: insertError } = await supabase
+        .from("tasks")
+        .insert([
+          {
+            title,
+            description,
+            status,
+            priority,
+            due_date: dueDate,
+            community_id: communityId,
+            assigned_to: assignedTo || null,
+            created_by: createdBy,
+          },
+        ])
+        .select()
+
+      if (insertError) throw insertError
+
+      // Add task creation update
+      if (data && data[0]?.id) {
+        await supabase.from("task_updates").insert([
+          {
+            task_id: data[0].id,
+            user_id: createdBy,
+            content: "Task created",
+            update_type: "created",
+          },
+        ])
+      }
+
+      toast({
+        title: "Task created",
+        description: "Your task has been created successfully",
+      })
+
+      // Reset form
+      setTitle("")
+      setDescription("")
+      setCommunityId("")
+      setAssignedTo("")
+      setStatus("pending")
+      setPriority("medium")
+      setDueDate("")
+
+      // Close dialog
+      setOpen(false)
+
+      // Refresh page
+      router.refresh()
+    } catch (err: any) {
       console.error("Error creating task:", err)
-      setError("An error occurred while creating the task")
+      setError(err.message || "An error occurred while creating the task")
+
+      toast({
+        title: "Error creating task",
+        description: err.message || "Failed to create task",
+        variant: "destructive",
+      })
     } finally {
       setIsSubmitting(false)
     }
@@ -158,7 +229,7 @@ export function AddTaskForm() {
                   <SelectValue placeholder="Select staff member" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  <SelectItem value="">Unassigned</SelectItem>
                   {staff.map((member) => (
                     <SelectItem key={member.id} value={member.id}>
                       {member.name} ({member.role})
