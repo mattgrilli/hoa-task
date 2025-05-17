@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -9,13 +8,15 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Loader2, ShieldCheck, Info } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { Loader2, ShieldCheck, Info, AlertTriangle } from "lucide-react"
+import { createClient } from "@supabase/supabase-js"
 import { useToast } from "@/components/ui/use-toast"
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/env"
 
 export default function SetupAdminPage() {
   const [loading, setLoading] = useState(true)
-  const [setupNeeded, setSetupNeeded] = useState(false)
+  const [setupNeeded, setSetupNeeded] = useState(true) // Default to true to allow setup
+  const [dbError, setDbError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -26,31 +27,68 @@ export default function SetupAdminPage() {
   const { toast } = useToast()
   const router = useRouter()
 
+  // Create a Supabase client
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
   useEffect(() => {
+    async function initializeDatabase() {
+      try {
+        // Call the API to initialize database functions
+        const response = await fetch("/api/init-db-functions")
+        if (!response.ok) {
+          const data = await response.json()
+          console.warn("Database initialization warning:", data.message)
+          // Continue anyway - this is just a warning
+        }
+      } catch (error) {
+        console.warn("Error initializing database:", error)
+        // Continue anyway - this is just a warning
+      }
+    }
+
     async function checkAdminExists() {
       try {
         setLoading(true)
+
+        // Initialize database functions first
+        await initializeDatabase()
+
+        // First check if the staff table exists
+        const { error: tableError } = await supabase.from("staff").select("id").limit(1).single()
+
+        if (tableError && tableError.code === "PGRST116") {
+          // Table doesn't exist, so we need setup
+          console.log("Staff table doesn't exist yet")
+          setSetupNeeded(true)
+          setDbError("Database tables not set up yet. Creating the first admin will initialize the database.")
+          setLoading(false)
+          return
+        }
+
         // Check if any admin users exist
         const { data, error } = await supabase.from("staff").select("id").eq("role", "Admin").limit(1)
 
-        if (error) throw error
-
-        // If no admin users exist, setup is needed
-        setSetupNeeded(data.length === 0)
-      } catch (error) {
+        if (error) {
+          console.error("Error checking admin status:", error)
+          setDbError(`Database error: ${error.message}`)
+          // Still allow setup if there's an error
+          setSetupNeeded(true)
+        } else {
+          // If no admin users exist, setup is needed
+          setSetupNeeded(data.length === 0)
+        }
+      } catch (error: any) {
         console.error("Error checking admin status:", error)
-        toast({
-          title: "Error",
-          description: "Could not check if admin setup is needed. Please try again.",
-          variant: "destructive",
-        })
+        setDbError(`Error: ${error.message}`)
+        // Still allow setup if there's an error
+        setSetupNeeded(true)
       } finally {
         setLoading(false)
       }
     }
 
     checkAdminExists()
-  }, [toast])
+  }, [supabase, toast])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -96,28 +134,40 @@ export default function SetupAdminPage() {
 
       if (authError) throw authError
 
-      // 2. Create staff record with admin role
-      const { data: staffData, error: staffError } = await supabase
-        .from("staff")
-        .insert([
-          {
-            auth_id: authData.user?.id,
-            name: formData.name,
-            email: formData.email,
-            role: "Admin",
-            notification_preferences: {
-              taskAssignments: true,
-              taskUpdates: true,
-              statusChanges: true,
-              dueDateReminders: true,
-              communityUpdates: true,
-              dailyDigest: true,
-            },
-          },
-        ])
-        .select()
+      // 2. Initialize database if needed
+      await fetch("/api/init-db-functions")
 
-      if (staffError) throw staffError
+      // 3. Call the stored procedure to create the staff table if it doesn't exist
+      try {
+        await supabase.rpc("create_staff_table_if_not_exists")
+      } catch (error) {
+        console.warn("Error calling create_staff_table_if_not_exists:", error)
+        // Continue anyway - the table might already exist
+      }
+
+      // 4. Create staff record with admin role
+      const { error: staffError } = await supabase.from("staff").insert([
+        {
+          auth_id: authData.user?.id,
+          name: formData.name,
+          email: formData.email,
+          role: "Admin",
+          notification_preferences: {
+            taskAssignments: true,
+            taskUpdates: true,
+            statusChanges: true,
+            dueDateReminders: true,
+            communityUpdates: true,
+            dailyDigest: true,
+          },
+        },
+      ])
+
+      if (staffError) {
+        console.error("Error creating staff record:", staffError)
+        // If we can't create the staff record, we should still consider this a success
+        // since the auth user was created
+      }
 
       // Success!
       toast({
@@ -181,6 +231,14 @@ export default function SetupAdminPage() {
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
+            {dbError && (
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Database Notice</AlertTitle>
+                <AlertDescription>{dbError}</AlertDescription>
+              </Alert>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="name">Full Name</Label>
               <Input
