@@ -1,14 +1,16 @@
-import { redirect } from "next/navigation"
-import { getUserRole } from "@/lib/auth"
-import { AdminDashboard } from "@/components/admin-dashboard"
+import { StaffApprovalManager } from "@/components/staff-approval-manager"
 
-export default async function AdminPage() {
-  // Check if user has admin role
-  const role = await getUserRole()
+export default function AdminPage() {
+  return (
+    <div className="container mx-auto py-10 space-y-8">
+      <div>
+        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        <p className="text-muted-foreground">Manage your HOA system settings and users</p>
+      </div>
 
-  if (role !== "Admin" && role !== "Super Admin") {
-    redirect("/")
-  }
+      <StaffApprovalManager />
 
-  return <AdminDashboard />
+      {/* Other admin components will go here */}
+    </div>
+  )
 }

@@ -38,7 +38,7 @@ export default function RegisterPage() {
     }
 
     try {
-      // Register the user
+      // Register the user - the database trigger will create them as a resident
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
@@ -56,19 +56,7 @@ export default function RegisterPage() {
       if (data?.user && !data?.session) {
         setSuccess(true)
       } else {
-        // If auto-confirmed, create a staff record
-        const { error: staffError } = await supabase.from("staff").insert([
-          {
-            auth_id: data?.user?.id,
-            name,
-            email,
-            role: "Community Manager", // Default role
-          },
-        ])
-
-        if (staffError) throw staffError
-
-        // Redirect to dashboard
+        // If auto-confirmed, redirect to dashboard
         router.push("/")
         router.refresh()
       }
