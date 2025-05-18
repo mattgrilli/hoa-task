@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -11,11 +12,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Loader2, ShieldCheck, Info, AlertTriangle } from "lucide-react"
 import { createClient } from "@supabase/supabase-js"
 import { useToast } from "@/components/ui/use-toast"
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/env"
 
 export default function SetupAdminPage() {
   const [loading, setLoading] = useState(true)
-  const [setupNeeded, setSetupNeeded] = useState(true) // Default to true to allow setup
+  const [setupNeeded, setSetupNeeded] = useState(true)
   const [dbError, setDbError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: "",
@@ -28,45 +28,21 @@ export default function SetupAdminPage() {
   const router = useRouter()
 
   // Create a Supabase client
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+  )
 
   useEffect(() => {
-    async function initializeDatabase() {
-      try {
-        // Call the API to initialize database functions
-        const response = await fetch("/api/init-db-functions")
-        if (!response.ok) {
-          const data = await response.json()
-          console.warn("Database initialization warning:", data.message)
-          // Continue anyway - this is just a warning
-        }
-      } catch (error) {
-        console.warn("Error initializing database:", error)
-        // Continue anyway - this is just a warning
-      }
-    }
-
     async function checkAdminExists() {
       try {
         setLoading(true)
 
-        // Initialize database functions first
-        await initializeDatabase()
-
-        // First check if the staff table exists
-        const { error: tableError } = await supabase.from("staff").select("id").limit(1).single()
-
-        if (tableError && tableError.code === "PGRST116") {
-          // Table doesn't exist, so we need setup
-          console.log("Staff table doesn't exist yet")
-          setSetupNeeded(true)
-          setDbError("Database tables not set up yet. Creating the first admin will initialize the database.")
-          setLoading(false)
-          return
-        }
-
-        // Check if any admin users exist
-        const { data, error } = await supabase.from("staff").select("id").eq("role", "Admin").limit(1)
+        // Use a direct count query instead of fetching records
+        const { count, error } = await supabase
+          .from("staff")
+          .select("*", { count: "exact", head: true })
+          .eq("role", "Admin")
 
         if (error) {
           console.error("Error checking admin status:", error)
@@ -74,8 +50,8 @@ export default function SetupAdminPage() {
           // Still allow setup if there's an error
           setSetupNeeded(true)
         } else {
-          // If no admin users exist, setup is needed
-          setSetupNeeded(data.length === 0)
+          // If count > 0, admin exists
+          setSetupNeeded(count === 0)
         }
       } catch (error: any) {
         console.error("Error checking admin status:", error)
@@ -88,15 +64,18 @@ export default function SetupAdminPage() {
     }
 
     checkAdminExists()
-  }, [supabase, toast])
+  }, [supabase])
 
+  // Fix: Use a proper onChange handler that doesn't trigger form submission
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault() // Prevent any default behavior
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Fix: Ensure the form submission is properly handled
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault() // Prevent form submission
 
     // Validate form
     if (!formData.name || !formData.email || !formData.password) {
@@ -134,18 +113,7 @@ export default function SetupAdminPage() {
 
       if (authError) throw authError
 
-      // 2. Initialize database if needed
-      await fetch("/api/init-db-functions")
-
-      // 3. Call the stored procedure to create the staff table if it doesn't exist
-      try {
-        await supabase.rpc("create_staff_table_if_not_exists")
-      } catch (error) {
-        console.warn("Error calling create_staff_table_if_not_exists:", error)
-        // Continue anyway - the table might already exist
-      }
-
-      // 4. Create staff record with admin role
+      // 2. Create staff record with admin role
       const { error: staffError } = await supabase.from("staff").insert([
         {
           auth_id: authData.user?.id,
@@ -165,8 +133,7 @@ export default function SetupAdminPage() {
 
       if (staffError) {
         console.error("Error creating staff record:", staffError)
-        // If we can't create the staff record, we should still consider this a success
-        // since the auth user was created
+        throw staffError
       }
 
       // Success!
@@ -229,7 +196,8 @@ export default function SetupAdminPage() {
           </CardTitle>
           <CardDescription>Set up the initial administrator account for your HOA Task Manager.</CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
+        {/* Fix: Ensure the form doesn't submit on input changes */}
+        <form onSubmit={handleSubmit} method="POST">
           <CardContent className="space-y-4">
             {dbError && (
               <Alert>
@@ -248,6 +216,7 @@ export default function SetupAdminPage() {
                 value={formData.name}
                 onChange={handleChange}
                 required
+                autoComplete="name"
               />
             </div>
             <div className="space-y-2">
@@ -260,6 +229,7 @@ export default function SetupAdminPage() {
                 value={formData.email}
                 onChange={handleChange}
                 required
+                autoComplete="email"
               />
             </div>
             <div className="space-y-2">
@@ -271,6 +241,7 @@ export default function SetupAdminPage() {
                 value={formData.password}
                 onChange={handleChange}
                 required
+                autoComplete="new-password"
               />
             </div>
             <div className="space-y-2">
@@ -282,6 +253,7 @@ export default function SetupAdminPage() {
                 value={formData.confirmPassword}
                 onChange={handleChange}
                 required
+                autoComplete="new-password"
               />
             </div>
 
